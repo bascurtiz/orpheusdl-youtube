@@ -15,6 +15,7 @@ from urllib.parse import quote
 # Lazy import yt-dlp to avoid issues with PyInstaller
 yt_dlp = None
 _cookie_warning_shown = False
+_shown_warnings = set()
 
 def _get_yt_dlp():
     """Lazily import yt-dlp module."""
@@ -94,6 +95,20 @@ class YouTubeAPI:
                     if _cookie_warning_shown:
                         return
                     _cookie_warning_shown = True
+
+                # Deduplicate warnings of the same nature
+                # Strip [extractor] id: prefix to identify the core message
+                clean_msg = msg
+                # Pattern: [anything] anything: message
+                match = re.match(r'^\[.*?\]\s+.*?:?\s+(.*)$', msg)
+                if match:
+                    clean_msg = match.group(1)
+                
+                global _shown_warnings
+                if clean_msg in _shown_warnings:
+                    return
+                
+                _shown_warnings.add(clean_msg)
                     
                 print(f"[YouTube Warning] {msg}")
             def error(self, msg):
