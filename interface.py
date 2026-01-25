@@ -380,7 +380,7 @@ class ModuleInterface:
         if data and playlist_id in data:
             cached_data = data[playlist_id]
             # Only use cached data if it has entries (i.e. it's a full playlist object, not just a search result)
-            if cached_data.get('entries'):
+            if cached_data and cached_data.get('entries'):
                 playlist_data = cached_data
         
         if not playlist_data:
