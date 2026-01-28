@@ -445,3 +445,64 @@ class ModuleInterface:
             tracks=track_ids,
             track_extra_kwargs={'data': track_data, 'channel_name': channel_name}
         )
+    
+    def get_preview_stream_url(self, track_id: str) -> Optional[str]:
+        """
+        Get a preview stream URL for a YouTube video using low-quality audio.
+        This can be used for preview playback in the GUI.
+        
+        Returns the preview URL if available, None otherwise.
+        """
+        try:
+            # Use yt-dlp to extract format information and get a low-quality audio stream URL
+            video_info = self.api.get_video_info(track_id)
+            
+            if not video_info:
+                return None
+            
+            # Get available formats
+            formats = video_info.get('formats', [])
+            if not formats:
+                return None
+            
+            # Look for low-quality audio-only formats (prefer worstaudio for speed)
+            # Format priority: audio-only with opus > aac > mp3 > any audio-only
+            preferred_codecs = ['opus', 'aac', 'mp3']
+            selected_format = None
+            
+            # First pass: try to find audio-only formats with preferred codecs
+            for codec in preferred_codecs:
+                for fmt in formats:
+                    # Check if format is audio-only (no video codec) and matches codec
+                    if fmt.get('vcodec') == 'none' and fmt.get('acodec') != 'none' and \
+                       fmt.get('acodec', '').startswith(codec):
+                        # Prefer lower bitrate for faster loading - sort by bitrate
+                        if selected_format is None:
+                            selected_format = fmt
+                        else:
+                            # Compare bitrates and prefer lower
+                            current_abr = selected_format.get('abr', 0) or selected_format.get('tbr', 0) or 0
+                            fmt_abr = fmt.get('abr', 0) or fmt.get('tbr', 0) or 0
+                            if fmt_abr < current_abr:
+                                selected_format = fmt
+            
+            # If no preferred codec found, get any audio-only format (lowest bitrate)
+            if not selected_format:
+                audio_formats = [f for f in formats if f.get('vcodec') == 'none' and f.get('acodec') != 'none']
+                if audio_formats:
+                    # Sort by bitrate (ascending) to get lowest quality for faster loading
+                    audio_formats.sort(key=lambda x: x.get('abr', 0) or x.get('tbr', 0) or 0)
+                    selected_format = audio_formats[0]
+            
+            if selected_format:
+                # Get the URL from the format
+                url = selected_format.get('url')
+                if url:
+                    return url
+            
+            return None
+            
+        except Exception as e:
+            import logging
+            logging.debug(f'{module_information.service_name}: Error getting preview URL for track {track_id}: {e}')
+            return None

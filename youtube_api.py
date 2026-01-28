@@ -205,26 +205,54 @@ class YouTubeAPI:
                                     channel_id = entry['channel_id']
                                     if channel_id not in seen_channels:
                                         seen_channels.add(channel_id)
+                                        # Try multiple possible fields for channel thumbnail
+                                        thumbnail = (
+                                            entry.get('thumbnail') or
+                                            entry.get('channel_thumbnail') or
+                                            entry.get('channel_follower_count') or
+                                            (entry.get('thumbnails', [{}])[0].get('url') if entry.get('thumbnails') else None)
+                                        )
+                                        # Note: When extract_flat=True, channel thumbnails might not be included
+                                        # If not available, the GUI will lazy-load them
+                                        
                                         results.append({
                                             'id': channel_id,
                                             'title': entry.get('channel', entry.get('uploader', 'Unknown')),
                                             'url': f"https://www.youtube.com/channel/{channel_id}",
                                             'type': 'channel',
-                                            'thumbnail': entry.get('thumbnail'),
+                                            'thumbnail': thumbnail,
                                         })
                                         if len(results) >= limit:
                                             break
                         else:
                             for entry in entries:
                                 if entry:
+                                    video_id = entry.get('id')
+                                    thumbnail = entry.get('thumbnail')
+                                    
+                                    if search_type == 'playlist':
+                                        # For playlists, try multiple possible fields for thumbnail
+                                        if not thumbnail:
+                                            thumbnail = (
+                                                entry.get('playlist_thumbnail') or
+                                                entry.get('thumbnails', [{}])[0].get('url') if entry.get('thumbnails') else None
+                                            )
+                                        # Note: When extract_flat=True, playlist thumbnails might not be included
+                                        # If not available, the GUI will lazy-load them
+                                    else:
+                                        # For videos, fallback: construct thumbnail URL from video ID if not provided
+                                        # YouTube thumbnails follow pattern: https://i.ytimg.com/vi/{VIDEO_ID}/default.jpg
+                                        if not thumbnail and video_id:
+                                            thumbnail = f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"
+                                    
                                     results.append({
-                                        'id': entry.get('id'),
+                                        'id': video_id or entry.get('id'),
                                         'title': entry.get('title'),
                                         'uploader': entry.get('uploader', entry.get('channel', 'Unknown')),
                                         'channel_id': entry.get('channel_id'),
                                         'duration': entry.get('duration'),
-                                        'url': entry.get('url', f"https://www.youtube.com/watch?v={entry.get('id')}"),
-                                        'thumbnail': entry.get('thumbnail'),
+                                        'url': entry.get('url', f"https://www.youtube.com/watch?v={video_id}" if video_id else f"https://www.youtube.com/playlist?list={entry.get('id')}"),
+                                        'thumbnail': thumbnail,
                                         'type': 'playlist' if search_type == 'playlist' else 'video',
                                     })
         except Exception as e:
@@ -277,6 +305,12 @@ class YouTubeAPI:
                 
                 with _yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(url, download=False)
+                    # Playlist thumbnail might be in the info dict itself
+                    if info and not info.get('thumbnail'):
+                        # Try to get thumbnail from first entry if available
+                        entries = info.get('entries', [])
+                        if entries and entries[0] and entries[0].get('thumbnail'):
+                            info['thumbnail'] = entries[0].get('thumbnail')
                     return info
         except Exception as e:
             print(f"[YouTube] Error getting playlist info: {e}")
@@ -303,10 +337,48 @@ class YouTubeAPI:
                 
                 with _yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(url, download=False)
+                    # Channel thumbnail might be in the info dict itself
+                    # Try multiple possible fields
+                    if info:
+                        if not info.get('thumbnail'):
+                            # Try alternative fields
+                            thumbnail = (
+                                info.get('channel_thumbnail') or
+                                info.get('channel_follower_count') or
+                                (info.get('thumbnails', [{}])[0].get('url') if info.get('thumbnails') else None)
+                            )
+                            if thumbnail:
+                                info['thumbnail'] = thumbnail
                     return info
         except Exception as e:
             print(f"[YouTube] Error getting channel info: {e}")
             return None
+    
+    def get_channel_thumbnail(self, channel_id: str) -> Optional[str]:
+        """
+        Get channel thumbnail URL.
+        Tries to fetch channel info to get the thumbnail.
+        
+        Args:
+            channel_id: YouTube channel ID
+            
+        Returns:
+            Thumbnail URL or None if not available
+        """
+        try:
+            channel_info = self.get_channel_info(channel_id)
+            if channel_info:
+                # Try multiple possible fields for channel thumbnail
+                thumbnail = (
+                    channel_info.get('thumbnail') or
+                    channel_info.get('channel_thumbnail') or
+                    channel_info.get('channel_follower_count') or  # Sometimes thumbnail is here
+                    (channel_info.get('thumbnails', [{}])[0].get('url') if channel_info.get('thumbnails') else None)
+                )
+                return thumbnail
+        except Exception as e:
+            print(f"[YouTube] Error getting channel thumbnail: {e}")
+        return None
     
     def download_audio(self, video_id: str, output_path: str, preferred_codec: str = 'opus') -> Optional[str]:
         """
