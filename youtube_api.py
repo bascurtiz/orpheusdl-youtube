@@ -448,11 +448,25 @@ class YouTubeAPI:
                 return None
         except Exception as e:
             error_msg = str(e)
+            cookies_location = self.cookies_path if self.cookies_path else "./config/youtube-cookies.txt"
+            cookies_missing = not (self.cookies_path and os.path.isfile(self.cookies_path))
+            
+            # Check for age restriction errors
             if "Sign in to confirm your age" in error_msg or "age-restricted" in error_msg.lower():
-                cookies_location = self.cookies_path if self.cookies_path else "./config/youtube-cookies.txt"
                 print(f"[YouTube] WARNING: Download failed due to age restriction.")
                 print(f"[YouTube] Please ensure valid cookies are present at: {cookies_location}")
                 print(f"[YouTube] You can export cookies using a browser extension (e.g., 'Get cookies.txt LOCALLY')")
+            # Check for 403 Forbidden errors (bot detection / missing authentication)
+            elif "403" in error_msg or "Forbidden" in error_msg:
+                print(f"[YouTube] WARNING: Download failed with HTTP 403 Forbidden.")
+                if cookies_missing:
+                    print(f"[YouTube] This error typically occurs when YouTube detects automated access.")
+                    print(f"[YouTube] Cookies are required to authenticate requests, even for non-age-restricted content.")
+                    print(f"[YouTube] Please provide cookies at: {cookies_location}")
+                    print(f"[YouTube] You can export cookies using a browser extension (e.g., 'Get cookies.txt LOCALLY')")
+                else:
+                    print(f"[YouTube] Cookies are present but may be invalid or expired.")
+                    print(f"[YouTube] Please refresh your cookies file at: {cookies_location}")
             
             print(f"[YouTube] Download error: {e}")
             return None

@@ -88,9 +88,17 @@ The module supports standard YouTube URLs:
 3. Enter a URL or use the search function
 4. Select results to download
 
-## Cookies (Optional)
+## Cookies (Recommended)
 
-For age-restricted or premium content, you may need to provide cookies:
+Cookies are **recommended** and may be **required** for many videos, even if they are not age-restricted. YouTube uses bot detection mechanisms that can block automated downloads without proper authentication.
+
+**When cookies are needed:**
+- Age-restricted content
+- Premium content
+- Videos blocked by YouTube's bot detection (HTTP 403 errors)
+- Some videos may require authentication even if publicly accessible
+
+**Note:** If you encounter "HTTP 403 Forbidden" errors, cookies are likely required to authenticate your requests.
 
 ### Steps to get cookies:
 1. Log in to YouTube in your browser.
