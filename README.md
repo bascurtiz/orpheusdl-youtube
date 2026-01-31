@@ -8,7 +8,7 @@ This module enables downloading audio from YouTube using OrpheusDL. It uses [yt-
 - Search YouTube for videos, playlists, and channels
 - Support for playlists and channel downloads
 - Cookie support for age-restricted content
-- High-quality audio (Opus > M4A > MP3 with fallback)
+- Different audio formats (Opus > M4A > MP3 with fallback)
 
 ## Prerequisites
 
