@@ -32,6 +32,24 @@ Or download the binary from the [yt-dlp GitHub release page](https://github.com/
 pip install -U https://github.com/yt-dlp/yt-dlp/archive/master.zip
 ```
 
+**Keeping yt-dlp up to date:** YouTube frequently changes its platform, so an up-to-date version of yt-dlp is required. If you get errors, try upgrading yt-dlp:
+```bash
+pip install -U yt-dlp
+```
+On macOS:
+```bash
+pip3 install -U yt-dlp
+```
+
+**"Challenge solver version not supported" warning:** After upgrading yt-dlp, you may see a warning about the challenge solver script version. Upgrade the `yt-dlp-ejs` package as well:
+```bash
+pip install -U yt-dlp-ejs
+```
+On macOS:
+```bash
+pip3 install -U yt-dlp-ejs
+```
+
 ### 4. Deno (Recommended)
 Required for solving YouTube's latest "EJS" challenges
 
@@ -143,6 +161,13 @@ The download format is determined by the global **Download Quality** setting in 
 > **Note**: You can override this per-download by right-clicking a search result and selecting a specific format.
 
 ## Troubleshooting
+
+### "Challenge solver lib script version X is not supported"
+Upgrade the `yt-dlp-ejs` package:
+```bash
+pip install -U yt-dlp-ejs
+```
+(macOS: `pip3 install -U yt-dlp-ejs`)
 
 ### "FFmpeg not found"
 - Install FFmpeg from https://ffmpeg.org
