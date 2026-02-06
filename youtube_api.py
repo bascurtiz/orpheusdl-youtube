@@ -129,6 +129,39 @@ class YouTubeAPI:
                 except Exception as e:
                     print(f"[YouTube] Warning: Could not remove temp cookie file {temp_cookie_path}: {e}")
 
+    def _thumbnail_from_entry(self, entry: Dict[str, Any], entry_id: Optional[str], search_type: str) -> Optional[str]:
+        """Resolve thumbnail URL from a search result entry (video, playlist, or channel)."""
+        # For channel search, entry.thumbnail/thumbnails are from the video result, not the channel avatar
+        if search_type == 'channel':
+            thumb = entry.get('channel_thumbnail')
+            if not thumb and entry.get('thumbnails'):
+                # Prefer avatar-shaped thumbnails (small square); video thumbs are typically 120x90 etc.
+                thumbs = entry['thumbnails']
+                if thumbs:
+                    # Channel avatars are usually small and square (e.g. 48x48, 88x88, 176x176)
+                    square = [t for t in thumbs if t.get('width') and t.get('height') and abs((t.get('width') or 0) - (t.get('height') or 0)) <= 16]
+                    if square:
+                        best = max(square, key=lambda t: (t.get('width') or 0) * (t.get('height') or 0))
+                        thumb = best.get('url')
+            if not thumb and entry_id:
+                return self.get_channel_thumbnail(entry_id)
+            return thumb or None
+        thumb = entry.get('thumbnail')
+        if not thumb and entry.get('thumbnails'):
+            thumbs = entry['thumbnails']
+            if thumbs:
+                best = max(thumbs, key=lambda t: (t.get('width') or 0) * (t.get('height') or 0))
+                thumb = best.get('url') or thumb
+        if not thumb and entry.get('channel_thumbnail'):
+            thumb = entry['channel_thumbnail']
+        if not thumb and search_type == 'video' and entry_id:
+            return f"https://i.ytimg.com/vi/{entry_id}/hqdefault.jpg"
+        if not thumb and search_type == 'playlist' and entry_id:
+            playlist_info = self.get_playlist_info(entry_id)
+            if playlist_info and playlist_info.get('thumbnail'):
+                return playlist_info['thumbnail']
+        return thumb or None
+
     def search(self, query: str, search_type: str = 'video', limit: int = 10) -> List[Dict[str, Any]]:
         _yt_dlp = _get_yt_dlp()
         if search_type == 'playlist':
@@ -153,29 +186,35 @@ class YouTubeAPI:
                                     cid = entry['channel_id']
                                     if cid not in seen_channels:
                                         seen_channels.add(cid)
+                                        thumb = self._thumbnail_from_entry(entry, cid, 'channel')
                                         results.append({
                                             'id': cid,
                                             'title': entry.get('channel', entry.get('uploader', 'Unknown')),
                                             'url': f"https://www.youtube.com/channel/{cid}",
                                             'type': 'channel',
-                                            'thumbnail': entry.get('thumbnail')
+                                            'thumbnail': thumb
                                         })
                                         if len(results) >= limit: break
                         else:
                             for entry in entries:
                                 if entry:
                                     vid_id = entry.get('id')
-                                    thumb = entry.get('thumbnail') or (f"https://i.ytimg.com/vi/{vid_id}/mqdefault.jpg" if vid_id else None)
-                                    results.append({
+                                    thumb = self._thumbnail_from_entry(entry, vid_id, search_type)
+                                    out = {
                                         'id': vid_id or entry.get('id'),
                                         'title': entry.get('title'),
                                         'uploader': entry.get('uploader', entry.get('channel', 'Unknown')),
+                                        'channel': entry.get('channel', entry.get('uploader', 'Unknown')),
                                         'channel_id': entry.get('channel_id'),
                                         'duration': entry.get('duration'),
+                                        'upload_date': entry.get('upload_date'),
                                         'url': entry.get('url', f"https://www.youtube.com/watch?v={vid_id}" if vid_id else f"https://www.youtube.com/playlist?list={entry.get('id')}"),
                                         'thumbnail': thumb,
                                         'type': 'playlist' if search_type == 'playlist' else 'video',
-                                    })
+                                    }
+                                    if search_type == 'playlist':
+                                        out['playlist_count'] = entry.get('playlist_count') or entry.get('n_entries')
+                                    results.append(out)
         except Exception as e:
             print(f"[YouTube] Search error: {e}")
         return results
@@ -209,6 +248,34 @@ class YouTubeAPI:
             print(f"[YouTube] Error getting playlist info: {e}")
             return None
 
+    def _is_avatar_url(self, url: str) -> bool:
+        """True if URL looks like YouTube channel avatar. =s0 is the banner/full-size; avatar uses =s48, =s160, etc."""
+        if not url or 'yt3.googleusercontent.com' not in url:
+            return False
+        # Reject =s0 (banner / full-size). Avatar has explicit size: =s48, =s88, =s100, =s160, =s176, =s200, ...
+        if re.search(r'=s0(?:-|$|\?|/)', url):
+            return False
+        return bool(re.search(r'=s[1-9]\d+', url))
+
+    def _channel_avatar_from_thumbnails(self, thumbnails: List[Dict[str, Any]]) -> Optional[str]:
+        """Pick the channel avatar (small square) from thumbnails; avoid the banner (wide/large). Never return =s0."""
+        if not thumbnails:
+            return None
+        # Only consider thumbnails that look like avatar URLs (=s48, =s160, etc.). Never use =s0 (banner).
+        avatar_candidates = [t for t in thumbnails if t.get('url') and self._is_avatar_url(t.get('url'))]
+        if not avatar_candidates:
+            return None
+        # Prefer small square (by dimensions) among avatar candidates
+        square_small = [
+            t for t in avatar_candidates
+            if (t.get('width') or 0) <= 400 and (t.get('height') or 0) <= 400
+            and abs((t.get('width') or 0) - (t.get('height') or 0)) <= 24
+        ]
+        if square_small:
+            best = max(square_small, key=lambda t: (t.get('width') or 0) * (t.get('height') or 0))
+            return best.get('url')
+        return avatar_candidates[0].get('url')
+
     def get_channel_info(self, channel_id: str) -> Optional[Dict[str, Any]]:
         _yt_dlp = _get_yt_dlp()
         url = f"https://www.youtube.com/channel/{channel_id}/videos"
@@ -219,21 +286,54 @@ class YouTubeAPI:
                 with _yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(url, download=False)
                     if info and not info.get('thumbnail'):
-                        thumb = (info.get('channel_thumbnail') or (info.get('thumbnails', [{}])[0].get('url') if info.get('thumbnails') else None))
-                        if thumb: info['thumbnail'] = thumb
+                        thumb = (
+                            info.get('channel_thumbnail')
+                            or self._channel_avatar_from_thumbnails(info.get('thumbnails') or [])
+                            or (info.get('thumbnails', [{}])[0].get('url') if info.get('thumbnails') else None)
+                        )
+                        if thumb:
+                            info['thumbnail'] = thumb
                     return info
         except Exception as e:
             print(f"[YouTube] Error getting channel info: {e}")
             return None
 
     def get_channel_thumbnail(self, channel_id: str) -> Optional[str]:
+        """Fetch channel avatar (profile picture) via yt-dlp. Use channel root URL with
+        playlist_items 0 so we get channel metadata only; thumbnail is then the avatar, not the banner."""
+        _yt_dlp = _get_yt_dlp()
+        # Channel root URL (no /videos) + playlist_items 0 => avatar as thumbnail (per yt-dlp docs)
+        url = f"https://www.youtube.com/channel/{channel_id}"
         try:
-            info = self.get_channel_info(channel_id)
-            if info:
-                return info.get('thumbnail') or info.get('channel_thumbnail') or (info.get('thumbnails', [{}])[0].get('url') if info.get('thumbnails') else None)
+            with self._managed_options() as opts:
+                opts['extract_flat'] = True
+                opts['playlist_items'] = '0'
+                with _yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+            if not info:
+                return None
+            # Prefer avatar only. Never use =s0 (banner/full-size). Every return guarded.
+            thumb = self._return_avatar_only(info.get('channel_thumbnail'))
+            if thumb:
+                return thumb
+            thumb = self._channel_avatar_from_thumbnails(info.get('thumbnails') or [])
+            if thumb:
+                return self._return_avatar_only(thumb) or None
+            thumb = self._return_avatar_only(info.get('thumbnail'))
+            if thumb:
+                return thumb
+            for t in info.get('thumbnails') or []:
+                u = self._return_avatar_only(t.get('url') or '')
+                if u:
+                    return u
+            return None
         except Exception as e:
             print(f"[YouTube] Error getting channel thumbnail: {e}")
         return None
+
+    def _return_avatar_only(self, url: Optional[str]) -> Optional[str]:
+        """Return URL only if it looks like an avatar (=s48, =s160, etc.). Never return =s0 (banner)."""
+        return url if (url and self._is_avatar_url(url)) else None
 
     def download_audio(self, video_id: str, output_path: str, preferred_codec: str = 'opus') -> Optional[str]:
         _yt_dlp = _get_yt_dlp()

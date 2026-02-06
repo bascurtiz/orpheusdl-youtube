@@ -124,16 +124,58 @@ class ModuleInterface:
         
         results = self.api.search(query, search_type, limit)
         
+        def _year_from_upload_date(upload_date):
+            if not upload_date:
+                return None
+            s = str(upload_date)
+            return s[:4] if len(s) >= 4 else None
+
+        def _name_for_result(result):
+            # For channel/artist search, show channel name only in Artist column (leave Title blank)
+            if query_type == DownloadTypeEnum.artist:
+                return ''
+            return result.get('title', 'Unknown')
+
+        def _channel_or_artist_for_result(result):
+            # Prefer channel/uploader name; for playlists yt-dlp often doesn't provide these (would need extra fetch)
+            return result.get('uploader') or result.get('channel') or result.get('title', 'Unknown')
+
+        def _artists_for_result(result):
+            # For playlists, don't show "Unknown" when channel isn't available (avoids slow per-result fetch)
+            if query_type == DownloadTypeEnum.playlist:
+                name = _channel_or_artist_for_result(result)
+                if not name or (name or '').strip() == 'Unknown':
+                    return []
+            return [_channel_or_artist_for_result(result)]
+
+        def _additional_for_result(result):
+            if query_type != DownloadTypeEnum.playlist:
+                return None
+            n = result.get('playlist_count')
+            if n is None:
+                return None
+            return [f"1 track" if n == 1 else f"{n} tracks"]
+
+        def _skip_playlist_no_tracks(result):
+            if query_type != DownloadTypeEnum.playlist:
+                return False
+            # Only hide playlists that explicitly have 0 entries; show when count is missing (yt-dlp may omit it in search)
+            n = result.get('playlist_count')
+            return n is not None and n == 0
+
         return [
             SearchResult(
                 result_id=result['id'],
-                name=result.get('title', 'Unknown'),
-                artists=[result.get('uploader', result.get('title', 'Unknown'))],
+                name=_name_for_result(result),
+                artists=_artists_for_result(result) or None,
                 duration=result.get('duration'),
+                year=_year_from_upload_date(result.get('upload_date')),
+                additional=_additional_for_result(result),
                 image_url=result.get('thumbnail'),
                 extra_kwargs={'data': {result['id']: result}}
             )
             for result in results
+            if not _skip_playlist_no_tracks(result)
         ]
     
     def _parse_title_artist(self, title: str, uploader: str) -> tuple[str, str]:
@@ -246,7 +288,9 @@ class ModuleInterface:
                 codec=CodecEnum.OPUS,
                 cover_url='',
                 release_year=2024,
-                error='Failed to get video information'
+                error='Failed to get video information',
+                id=track_id,
+                preview_url=f"https://www.youtube.com/watch?v={track_id}" if track_id else None,
             )
         
         # Extract metadata
@@ -330,6 +374,8 @@ class ModuleInterface:
             cover_url=thumbnail or '',
             release_year=release_year,
             duration=duration,
+            id=track_id,
+            preview_url=f"https://www.youtube.com/watch?v={track_id}" if track_id else None,
             download_extra_kwargs={
                 'video_id': track_id,
                 'video_data': video_data,
