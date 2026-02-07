@@ -106,7 +106,7 @@ class YouTubeAPI:
         }
         if self.ffmpeg_path:
             opts['ffmpeg_location'] = self.ffmpeg_path
-        # JS runtime attempt: deno first
+        # JS runtime attempt: deno first (no console message here; YtDlpLogger will warn if yt-dlp hits runtime limits)
         try:
             if shutil.which("deno"):
                 opts['js_runtime'] = 'deno'
@@ -116,7 +116,9 @@ class YouTubeAPI:
             opts.pop('js_runtime', None)
             if not _js_runtime_logged:
                 _js_runtime_logged = True
-                print("[YouTube] Deno not found. Using fallback; some formats may be limited. Install Deno (https://deno.land) for best results.")
+                # Do not print here: this runs on first YouTube use (e.g. "Search all platforms"), which would show
+                # a YouTube message even when the user is only searching Qobuz/others. The GUI shows a Deno
+                # install dialog when the user actually tries a YouTube download (macOS/Linux).
         return opts
 
     @contextmanager
