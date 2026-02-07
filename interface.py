@@ -290,6 +290,7 @@ class ModuleInterface:
                 release_year=2024,
                 error='Failed to get video information',
                 id=track_id,
+                sample_rate=48.0,
                 preview_url=f"https://www.youtube.com/watch?v={track_id}" if track_id else None,
             )
         
@@ -359,6 +360,8 @@ class ModuleInterface:
         else:
             codec = CodecEnum.OPUS
         
+        # YouTube delivers OPUS/MP3 (and typically AAC) at 48kHz; display matches actual output
+        sample_rate = 48.0
         return TrackInfo(
             name=title,
             album='YouTube',
@@ -375,6 +378,7 @@ class ModuleInterface:
             release_year=release_year,
             duration=duration,
             id=track_id,
+            sample_rate=sample_rate,
             preview_url=f"https://www.youtube.com/watch?v={track_id}" if track_id else None,
             download_extra_kwargs={
                 'video_id': track_id,
