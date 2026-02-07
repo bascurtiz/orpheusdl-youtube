@@ -79,14 +79,19 @@ class YouTubeAPI:
                 print(f"[YouTube Error] {msg}")
             def _detect_runtime(self, msg):
                 global _js_runtime_logged
-                if _js_runtime_logged: return
+                if _js_runtime_logged:
+                    return
                 msg_l = msg.lower()
-                if "using js runtime" in msg_l or ("deno" in msg_l and "js" in msg_l) or ("node" in msg_l and "js" in msg_l):
+                if "no supported javascript runtime" in msg_l:
+                    print("[YouTube] No JavaScript runtime (e.g. Deno) found. Some formats may be limited. Install from https://deno.land or see Settings.")
+                    _js_runtime_logged = True
+                elif "using js runtime" in msg_l:
                     print(f"[YouTube] JS runtime detected: {msg}")
                     _js_runtime_logged = True
-                elif "no supported javascript runtime" in msg_l:
-                    print("[YouTube] JS runtime: builtin/fallback")
-                    _js_runtime_logged = True
+                elif ("deno" in msg_l and "js" in msg_l) or ("node" in msg_l and "js" in msg_l):
+                    if "could not be found" not in msg_l and "no supported" not in msg_l:
+                        print(f"[YouTube] JS runtime detected: {msg}")
+                        _js_runtime_logged = True
 
         opts = {
             'quiet': True,
@@ -107,9 +112,11 @@ class YouTubeAPI:
                 opts['js_runtime'] = 'deno'
             else:
                 raise FileNotFoundError("deno not found in PATH")
-        except Exception as e:
+        except Exception:
             opts.pop('js_runtime', None)
-            print(f"[YouTube] JS runtime fallback to auto ({e})")
+            if not _js_runtime_logged:
+                _js_runtime_logged = True
+                print("[YouTube] Deno not found. Using fallback; some formats may be limited. Install Deno (https://deno.land) for best results.")
         return opts
 
     @contextmanager
