@@ -287,7 +287,10 @@ class YouTubeAPI:
 
     def get_channel_info(self, channel_id: str) -> Optional[Dict[str, Any]]:
         _yt_dlp = _get_yt_dlp()
-        url = f"https://www.youtube.com/channel/{channel_id}/videos"
+        if channel_id.startswith('@') or channel_id.startswith('c/'):
+            url = f"https://www.youtube.com/{channel_id}/videos"
+        else:
+            url = f"https://www.youtube.com/channel/{channel_id}/videos"
         try:
             with self._managed_options() as opts:
                 opts['extract_flat'] = True
@@ -312,7 +315,10 @@ class YouTubeAPI:
         playlist_items 0 so we get channel metadata only; thumbnail is then the avatar, not the banner."""
         _yt_dlp = _get_yt_dlp()
         # Channel root URL (no /videos) + playlist_items 0 => avatar as thumbnail (per yt-dlp docs)
-        url = f"https://www.youtube.com/channel/{channel_id}"
+        if channel_id.startswith('@') or channel_id.startswith('c/'):
+            url = f"https://www.youtube.com/{channel_id}"
+        else:
+            url = f"https://www.youtube.com/channel/{channel_id}"
         try:
             with self._managed_options() as opts:
                 opts['extract_flat'] = True
@@ -402,8 +408,8 @@ def parse_youtube_url(url: str) -> Optional[Dict[str, str]]:
     if playlist_in_video: return {'type': 'playlist', 'id': playlist_in_video.group(1)}
     channel_patterns = [
         r'youtube\.com/channel/([a-zA-Z0-9_-]+)',
-        r'youtube\.com/c/([a-zA-Z0-9_-]+)',
-        r'youtube\.com/@([a-zA-Z0-9_-]+)',
+        r'youtube\.com/(c/[a-zA-Z0-9_\.-]+)',
+        r'youtube\.com/(@[a-zA-Z0-9_\.-]+)',
     ]
     for pattern in channel_patterns:
         m = re.search(pattern, url)
