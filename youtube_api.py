@@ -23,25 +23,45 @@ def _get_yt_dlp():
     """Lazily import yt-dlp module and ensure YoutubeDL is available."""
     global yt_dlp
     if yt_dlp is None:
+        import_errors = []
+        
+        # Strategy 1: Standard import
         try:
             import yt_dlp as _yt_dlp
-            # Safety check: if yt_dlp is a namespace package or shadowed, YoutubeDL might be missing
-            if not hasattr(_yt_dlp, 'YoutubeDL'):
-                from yt_dlp import YoutubeDL
-                _yt_dlp.YoutubeDL = YoutubeDL
-            yt_dlp = _yt_dlp
-        except Exception as e:
-            print(f"[YouTube] Critical: Could not import yt_dlp: {e}")
-            # Try direct import as fallback
-            try:
-                from yt_dlp import YoutubeDL
-                class FakeModule: pass
-                _yt_dlp = FakeModule()
-                _yt_dlp.YoutubeDL = YoutubeDL
+            if hasattr(_yt_dlp, 'YoutubeDL'):
                 yt_dlp = _yt_dlp
-            except Exception as e2:
-                print(f"[YouTube] Critical: Fallback import also failed: {e2}")
-                raise e
+                return yt_dlp
+            import_errors.append(f"Standard import succeeded but 'YoutubeDL' attribute missing. dir(yt_dlp): {dir(_yt_dlp)}")
+        except Exception as e:
+            import_errors.append(f"Standard import failed: {e}")
+
+        # Strategy 2: Absolute import of the class
+        try:
+            from yt_dlp import YoutubeDL
+            class FakeModule: pass
+            _yt_dlp = FakeModule()
+            _yt_dlp.YoutubeDL = YoutubeDL
+            yt_dlp = _yt_dlp
+            return yt_dlp
+        except Exception as e:
+            import_errors.append(f"Direct class import failed: {e}")
+
+        # Strategy 3: Try importing from the sub-module where YoutubeDL is defined (internal yt-dlp structure)
+        try:
+            from yt_dlp.YoutubeDL import YoutubeDL as YDLClass
+            class FakeModule2: pass
+            _yt_dlp = FakeModule2()
+            _yt_dlp.YoutubeDL = YDLClass
+            yt_dlp = _yt_dlp
+            return yt_dlp
+        except Exception as e:
+            import_errors.append(f"Sub-module import failed: {e}")
+
+        # If all failed, print full debug info
+        error_msg = "\n".join(import_errors)
+        print(f"[YouTube] Critical: All yt_dlp import strategies failed:\n{error_msg}")
+        raise ImportError(f"Could not import 'YoutubeDL' from 'yt_dlp'. Debug info:\n{error_msg}")
+        
     return yt_dlp
 
 
