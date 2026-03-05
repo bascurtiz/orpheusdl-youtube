@@ -20,11 +20,28 @@ _js_runtime_logged = False  # Runtime log guard
 
 
 def _get_yt_dlp():
-    """Lazily import yt-dlp module."""
+    """Lazily import yt-dlp module and ensure YoutubeDL is available."""
     global yt_dlp
     if yt_dlp is None:
-        import yt_dlp as _yt_dlp
-        yt_dlp = _yt_dlp
+        try:
+            import yt_dlp as _yt_dlp
+            # Safety check: if yt_dlp is a namespace package or shadowed, YoutubeDL might be missing
+            if not hasattr(_yt_dlp, 'YoutubeDL'):
+                from yt_dlp import YoutubeDL
+                _yt_dlp.YoutubeDL = YoutubeDL
+            yt_dlp = _yt_dlp
+        except Exception as e:
+            print(f"[YouTube] Critical: Could not import yt_dlp: {e}")
+            # Try direct import as fallback
+            try:
+                from yt_dlp import YoutubeDL
+                class FakeModule: pass
+                _yt_dlp = FakeModule()
+                _yt_dlp.YoutubeDL = YoutubeDL
+                yt_dlp = _yt_dlp
+            except Exception as e2:
+                print(f"[YouTube] Critical: Fallback import also failed: {e2}")
+                raise e
     return yt_dlp
 
 
