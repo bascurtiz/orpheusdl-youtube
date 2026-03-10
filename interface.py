@@ -5,8 +5,8 @@ Uses yt-dlp for downloading and searching YouTube content.
 
 import os
 import re
-from pathlib import Path
-from typing import Optional, Dict, Any
+import concurrent.futures
+from typing import List, Dict, Optional, Any
 
 from utils.models import (
     ModuleInformation, ModuleModes, ManualEnum, ModuleController,
@@ -137,16 +137,16 @@ class ModuleInterface:
             return result.get('title', 'Unknown')
 
         def _channel_or_artist_for_result(result):
-            # Prefer channel/uploader name; for playlists yt-dlp often doesn't provide these (would need extra fetch)
-            return result.get('uploader') or result.get('channel') or result.get('title', 'Unknown')
+            # Prefer channel/uploader name for the artist column
+            return result.get('uploader') or result.get('channel')
 
         def _artists_for_result(result):
-            # For playlists, don't show "Unknown" when channel isn't available (avoids slow per-result fetch)
-            if query_type == DownloadTypeEnum.playlist:
-                name = _channel_or_artist_for_result(result)
-                if not name or (name or '').strip() == 'Unknown':
-                    return []
-            return [_channel_or_artist_for_result(result)]
+            # Show the channel/uploader in the Artist column for playlists if available.
+            # If not available (common for YouTube playlist searches), return empty to keep column blank.
+            name = _channel_or_artist_for_result(result)
+            if not name or name.strip() == 'Unknown':
+                return []
+            return [name]
 
         def _additional_for_result(result):
             if query_type != DownloadTypeEnum.playlist:
@@ -163,7 +163,7 @@ class ModuleInterface:
             n = result.get('playlist_count')
             return n is not None and n == 0
 
-        return [
+        out = [
             SearchResult(
                 result_id=result['id'],
                 name=_name_for_result(result),
@@ -177,6 +177,98 @@ class ModuleInterface:
             for result in results
             if not _skip_playlist_no_tracks(result)
         ]
+
+        if query_type == DownloadTypeEnum.track:
+            missing_years = [t for t in out if not t.year]
+            if missing_years:
+                import yt_dlp
+                vdts = {}
+                def _fetch_yt_date(tid):
+                    ydl_opts = {'quiet': True, 'extract_flat': True, 'nocheckcertificate': True}
+                    try:
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            res = ydl.extract_info(tid, download=False)
+                            y = _year_from_upload_date(res.get('upload_date') or res.get('release_date'))
+                            if y: return tid, y
+                    except: pass
+                    return tid, None
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                    for tid, y in executor.map(_fetch_yt_date, [t.result_id for t in missing_years]):
+                        if y: vdts[tid] = y
+                
+                for t in missing_years:
+                    if t.result_id in vdts:
+                        t.year = vdts[t.result_id]
+        
+        elif query_type == DownloadTypeEnum.playlist:
+            missing_artists = [t for t in out if not t.artists]
+            missing_years = [t for t in out if not t.year]
+            missing_tracks = [t for t in out if not t.additional]
+            missing_durations = [t for t in out if not t.duration]
+            
+            if missing_artists or missing_years or missing_tracks or missing_durations:
+                import yt_dlp
+                vups = {}
+                vdts = {}
+                vtcs = {}
+                vdurs = {}
+                def _fetch_yt_playlist_meta(tid):
+                    ydl_opts = {'quiet': True, 'extract_flat': True, 'nocheckcertificate': True}
+                    try:
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            url = f"https://www.youtube.com/playlist?list={tid}"
+                            res = ydl.extract_info(url, download=False)
+                            name = res.get('uploader') or res.get('channel')
+                            
+                            # Fallback 1: Use modified_date if available (fastest for playlists)
+                            y = _year_from_upload_date(res.get('upload_date') or res.get('release_date') or res.get('modified_date'))
+                            
+                            entries = res.get('entries', [])
+                            duration = None
+                            
+                            if entries:
+                                # Process duration
+                                durations = [e.get('duration') for e in entries if isinstance(e, dict)]
+                                sum_dur = sum((d for d in durations if d), 0)
+                                if sum_dur > 0:
+                                    duration = sum_dur
+
+                            # Fallback 2: Extract the earliest upload_date from its constituent video entries
+                            if not y:
+                                dates = [_year_from_upload_date(e.get('upload_date') or e.get('release_date')) for e in entries if isinstance(e, dict)]
+                                valid_dates = [d for d in dates if d]
+                                if valid_dates:
+                                    y = min(valid_dates)
+                                    
+                            track_count = res.get('playlist_count')
+                            if not track_count and entries:
+                                track_count = len(entries)
+                                
+                            return tid, name, y, track_count, duration
+                    except: pass
+                    return tid, None, None, None, None
+
+                target_ids = list(set([t.result_id for t in missing_artists] + [t.result_id for t in missing_years] + [t.result_id for t in missing_tracks] + [t.result_id for t in missing_durations]))
+                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                    for tid, name, y, tc, dur in executor.map(_fetch_yt_playlist_meta, target_ids):
+                        if name: vups[tid] = name
+                        if y: vdts[tid] = y
+                        if tc: vtcs[tid] = tc
+                        if dur: vdurs[tid] = dur
+                
+                for t in out:
+                    if not t.artists and t.result_id in vups:
+                        t.artists = [vups[t.result_id]]
+                    if not t.year and t.result_id in vdts:
+                        t.year = vdts[t.result_id]
+                    if not t.additional and t.result_id in vtcs:
+                        tc = vtcs[t.result_id]
+                        t.additional = [f"1 track" if tc == 1 else f"{tc} tracks"]
+                    if not t.duration and t.result_id in vdurs:
+                        t.duration = vdurs[t.result_id]
+        
+        return out
     
     def _parse_title_artist(self, title: str, uploader: str) -> tuple[str, str]:
         """
