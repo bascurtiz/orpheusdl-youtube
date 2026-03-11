@@ -131,9 +131,6 @@ class ModuleInterface:
             return s[:4] if len(s) >= 4 else None
 
         def _name_for_result(result):
-            # For channel/artist search, show channel name only in Artist column (leave Title blank)
-            if query_type == DownloadTypeEnum.artist:
-                return ''
             return result.get('title', 'Unknown')
 
         def _channel_or_artist_for_result(result):
