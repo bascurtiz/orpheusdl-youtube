@@ -547,7 +547,7 @@ class ModuleInterface:
             release_year=2024,
             cover_url=playlist_data.get('thumbnail', ''),
             description=playlist_data.get('description', ''),
-            track_extra_kwargs={'data': track_data}
+            track_extra_kwargs={'data': track_data, 'channel_name': playlist_data.get('uploader', playlist_data.get('channel', 'Unknown'))}
         )
     
     def get_album_info(self, album_id: str, data: Dict = None, **kwargs):
