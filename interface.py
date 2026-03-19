@@ -181,7 +181,7 @@ class ModuleInterface:
                 import yt_dlp
                 vdts = {}
                 def _fetch_yt_date(tid):
-                    ydl_opts = {'quiet': True, 'extract_flat': True, 'nocheckcertificate': True}
+                    ydl_opts = {'quiet': True, 'extract_flat': True, 'nocheckcertificate': True, 'cachedir': False}
                     try:
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             res = ydl.extract_info(tid, download=False)
@@ -211,7 +211,7 @@ class ModuleInterface:
                 vtcs = {}
                 vdurs = {}
                 def _fetch_yt_playlist_meta(tid):
-                    ydl_opts = {'quiet': True, 'extract_flat': True, 'nocheckcertificate': True}
+                    ydl_opts = {'quiet': True, 'extract_flat': True, 'nocheckcertificate': True, 'cachedir': False}
                     try:
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             url = f"https://www.youtube.com/playlist?list={tid}"

@@ -140,6 +140,7 @@ class YouTubeAPI:
             # is used as a library (PyInstaller/frozen) since EJS scripts are not bundled.
             # See https://github.com/yt-dlp/yt-dlp/wiki/EJS
             'remote_components': ['ejs:github'],
+            'cachedir': False,
         }
         if self.ffmpeg_path:
             opts['ffmpeg_location'] = self.ffmpeg_path
