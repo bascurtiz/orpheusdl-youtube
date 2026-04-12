@@ -75,6 +75,7 @@ class YouTubeAPI:
             self.sleep_interval = int(kwargs.get('sleep_interval', 5))
         except (ValueError, TypeError):
             self.sleep_interval = 5
+        self.debug_mode = kwargs.get('debug_mode', False)
         self._check_ffmpeg_availability()
 
     def _check_ffmpeg_availability(self):
@@ -98,6 +99,8 @@ class YouTubeAPI:
         global _js_runtime_logged, _cookie_warning_shown, _shown_warnings
 
         class YtDlpLogger:
+            def __init__(self, debug_mode=False):
+                self.debug_mode = debug_mode
             def debug(self, msg): self._detect_runtime(msg)
             def info(self, msg): self._detect_runtime(msg)
             def warning(self, msg):
@@ -107,12 +110,30 @@ class YouTubeAPI:
                 if "The provided YouTube account cookies are no longer valid" in msg:
                     if _cookie_warning_shown: return
                     _cookie_warning_shown = True
+                
+                # Gate verbose/technical JS challenge logs unless in debug mode
+                if not self.debug_mode:
+                    msg_l = msg.lower()
+                    if "jschallengerequest" in msg_l: return
+                    if "please report this issue on" in msg_l: return
+                    if "signature solving failed" in msg_l: return
+                    if "n challenge solving failed" in msg_l: return
+                    if "ensure you have a supported javascript runtime" in msg_l: return
+
                 clean_msg = re.match(r'^\[.*?\]\s+.*?:?\s+(.*)$', msg)
                 clean_msg = clean_msg.group(1) if clean_msg else msg
                 if clean_msg in _shown_warnings: return
                 _shown_warnings.add(clean_msg)
                 print(f"[YouTube Warning] {msg}")
             def error(self, msg):
+                # Gate verbose technical errors unless in debug mode
+                if not self.debug_mode:
+                    msg_l = msg.lower()
+                    if "jschallengerequest" in msg_l: return
+                    if "requested format is not available" in msg_l:
+                        # This usually follows the JS challenge failure, skip it for cleaner logs
+                        # as we print our own failure message later.
+                        return
                 print(f"[YouTube Error] {msg}")
             def _detect_runtime(self, msg):
                 global _js_runtime_logged
@@ -123,18 +144,20 @@ class YouTubeAPI:
                     print("[YouTube] No JavaScript runtime (e.g. Deno) found. Some formats may be limited. Install from https://deno.land or see Settings.")
                     _js_runtime_logged = True
                 elif "using js runtime" in msg_l:
-                    print(f"[YouTube] JS runtime detected: {msg}")
+                    if self.debug_mode:
+                        print(f"[YouTube] JS runtime detected: {msg}")
                     _js_runtime_logged = True
                 elif ("deno" in msg_l and "js" in msg_l) or ("node" in msg_l and "js" in msg_l):
                     if "could not be found" not in msg_l and "no supported" not in msg_l:
-                        print(f"[YouTube] JS runtime detected: {msg}")
+                        if self.debug_mode:
+                            print(f"[YouTube] JS runtime detected: {msg}")
                         _js_runtime_logged = True
 
         opts = {
             'quiet': True,
             'no_warnings': True,
             'ignoreerrors': False,
-            'logger': YtDlpLogger(),
+            'logger': YtDlpLogger(debug_mode=self.debug_mode),
             'sleep_interval': self.sleep_interval,
             # Enable EJS challenge solver script downloads from GitHub. Required when yt-dlp
             # is used as a library (PyInstaller/frozen) since EJS scripts are not bundled.

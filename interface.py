@@ -70,7 +70,8 @@ class ModuleInterface:
         self.api = YouTubeAPI(
             cookies_path=cookies_path,
             ffmpeg_path=ffmpeg_path,
-            sleep_interval=settings.get('download_pause_seconds', 5)
+            sleep_interval=settings.get('download_pause_seconds', 5),
+            debug_mode=getattr(module_controller.orpheus_options, 'debug_mode', False)
         )
         
 
@@ -370,8 +371,8 @@ class ModuleInterface:
         if not video_data:
             return TrackInfo(
                 name='Unknown',
-                album='YouTube',
-                album_id='',
+                album=None,
+                album_id=None,
                 artists=['Unknown'],
                 tags=Tags(),
                 codec=CodecEnum.OPUS,
@@ -453,14 +454,16 @@ class ModuleInterface:
         sample_rate = 48.0
         return TrackInfo(
             name=title,
-            album='YouTube',
-            album_id='youtube',
+            album=None,
+            album_id=None,
             artists=[uploader],
             artist_id=video_data.get('channel_id', ''),
             tags=Tags(
+                album_artist=uploader,
                 release_date=release_date,
-                genres=['YouTube'],
+                genres=None,
                 description=video_data.get('description', '')[:500] if video_data.get('description') else None,
+                track_url=f"https://www.youtube.com/watch?v={track_id}"
             ),
             codec=codec,
             cover_url=thumbnail or '',
