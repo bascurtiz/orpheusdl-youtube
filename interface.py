@@ -110,6 +110,9 @@ class ModuleInterface:
     def search(self, query_type: DownloadTypeEnum, query: str, tags: Tags = None, limit: int = 10):
         """Search YouTube for videos, playlists, or channels."""
         
+        # YouTube Search has a hard limit of 50 results per request to stay efficient (consistent with Apple Music)
+        limit = min(int(limit), 50) if limit else 50
+        
         # Map query type to YouTube search type
         if query_type == DownloadTypeEnum.track:
             search_type = 'video'
