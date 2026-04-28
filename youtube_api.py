@@ -154,29 +154,11 @@ class YouTubeAPI:
         """
         Print explicit and actionable dependency guidance for YouTube failures.
         """
-        missing = []
         if not status["cookies_found"]:
-            missing.append("youtube-cookies.txt")
+            print("[YouTube] Export YouTube cookies to Netscape format and save as youtube-cookies.txt in ./config")
         if not status["deno_found"]:
-            missing.append("deno")
-        if not status["ffmpeg_found"]:
-            missing.append("ffmpeg/ffprobe")
-
-        if not missing:
-            return
-
-        print(f"[YouTube] Setup issue detected. Missing: {', '.join(missing)}")
-        print(f"[YouTube] Original yt-dlp error: {original_error}")
-
-        if not status["cookies_found"]:
-            print(f"[YouTube] Missing cookies file: {status['cookies_file']}")
-            print("[YouTube] Fix: export YouTube cookies to Netscape format and save as youtube-cookies.txt in ./config")
-            print("[YouTube] Guide: https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies")
-        if not status["deno_found"]:
-            print("[YouTube] Missing Deno runtime (needed for YouTube JS challenge solving).")
             print("[YouTube] Download and unzip deno into root folder of OrpheusDL: https://github.com/denoland/deno/releases/")
         if not status["ffmpeg_found"]:
-            print("[YouTube] Missing ffmpeg/ffprobe (required for audio post-processing and conversion).")
             print("[YouTube] Download and unzip ffmpeg+ffprobe into root folder of OrpheusDL: https://ffmpeg.org/download.html")
 
     def _get_base_opts(self) -> Dict[str, Any]:
@@ -218,6 +200,9 @@ class YouTubeAPI:
                     if "requested format is not available" in msg_l:
                         # This usually follows the JS challenge failure, skip it for cleaner logs
                         # as we print our own failure message later.
+                        return
+                    if "ffprobe and ffmpeg not found" in msg_l:
+                        # We print cleaner actionable guidance in download exception handler.
                         return
                 print(f"[YouTube Error] {msg}")
             def _detect_runtime(self, msg):
@@ -526,6 +511,7 @@ class YouTubeAPI:
         except Exception as e:
             msg = str(e)
             cookies_location = self.cookies_path if self.cookies_path else "./config/youtube-cookies.txt"
+            handled_dependency_case = False
             if "Sign in to confirm your age" in msg or "age-restricted" in msg.lower():
                 print(f"[YouTube] WARNING: Download failed due to age restriction. Use cookies at {cookies_location}")
             elif "403" in msg or "Forbidden" in msg:
@@ -537,7 +523,9 @@ class YouTubeAPI:
                 or "postprocessing" in msg.lower()
             ):
                 self._print_dependency_help(self._collect_runtime_status(), msg)
-            print(f"[YouTube] Download error: {e}")
+                handled_dependency_case = True
+            if not handled_dependency_case:
+                print(f"[YouTube] Download error: {e}")
             return None
 
     def download_audio_to_temp(self, video_id: str, preferred_codec: str = 'opus') -> Optional[str]:
