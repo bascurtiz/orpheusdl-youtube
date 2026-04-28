@@ -94,6 +94,91 @@ class YouTubeAPI:
         else:
             print("[YouTube] WARNING: ffmpeg not found. Please install ffmpeg for audio extraction.")
 
+    def _resolve_binary_path(self, binary_name: str) -> Optional[str]:
+        """
+        Resolve a binary location using PATH first, then common local locations.
+        """
+        path_hit = shutil.which(binary_name)
+        if path_hit:
+            return path_hit
+
+        candidate_names = [binary_name]
+        if os.name == "nt" and not binary_name.lower().endswith(".exe"):
+            candidate_names.append(f"{binary_name}.exe")
+
+        candidate_dirs = [
+            os.getcwd(),
+            os.path.dirname(os.path.abspath(__file__)),
+            os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")),
+        ]
+        for folder in candidate_dirs:
+            for name in candidate_names:
+                candidate = os.path.join(folder, name)
+                if os.path.isfile(candidate):
+                    return candidate
+        return None
+
+    def _collect_runtime_status(self) -> Dict[str, Any]:
+        """
+        Collect runtime/dependency status for better user-facing diagnostics.
+        """
+        cookies_file = self.cookies_path or "./config/youtube-cookies.txt"
+        cookies_found = bool(cookies_file and os.path.isfile(cookies_file))
+
+        # Respect explicit ffmpeg_path first.
+        ffmpeg_found = False
+        ffmpeg_display_path = None
+        if self.ffmpeg_path and os.path.isfile(self.ffmpeg_path):
+            ffmpeg_found = True
+            ffmpeg_display_path = self.ffmpeg_path
+        else:
+            ffmpeg_hit = self._resolve_binary_path("ffmpeg")
+            ffprobe_hit = self._resolve_binary_path("ffprobe")
+            if ffmpeg_hit and ffprobe_hit:
+                ffmpeg_found = True
+                ffmpeg_display_path = ffmpeg_hit
+
+        deno_hit = self._resolve_binary_path("deno")
+        deno_found = bool(deno_hit)
+
+        return {
+            "cookies_file": cookies_file,
+            "cookies_found": cookies_found,
+            "ffmpeg_found": ffmpeg_found,
+            "ffmpeg_path": ffmpeg_display_path,
+            "deno_found": deno_found,
+            "deno_path": deno_hit,
+        }
+
+    def _print_dependency_help(self, status: Dict[str, Any], original_error: str):
+        """
+        Print explicit and actionable dependency guidance for YouTube failures.
+        """
+        missing = []
+        if not status["cookies_found"]:
+            missing.append("youtube-cookies.txt")
+        if not status["deno_found"]:
+            missing.append("deno")
+        if not status["ffmpeg_found"]:
+            missing.append("ffmpeg/ffprobe")
+
+        if not missing:
+            return
+
+        print(f"[YouTube] Setup issue detected. Missing: {', '.join(missing)}")
+        print(f"[YouTube] Original yt-dlp error: {original_error}")
+
+        if not status["cookies_found"]:
+            print(f"[YouTube] Missing cookies file: {status['cookies_file']}")
+            print("[YouTube] Fix: export YouTube cookies to Netscape format and save as youtube-cookies.txt in ./config")
+            print("[YouTube] Guide: https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies")
+        if not status["deno_found"]:
+            print("[YouTube] Missing Deno runtime (needed for YouTube JS challenge solving).")
+            print("[YouTube] Download and unzip deno into root folder of OrpheusDL: https://github.com/denoland/deno/releases/")
+        if not status["ffmpeg_found"]:
+            print("[YouTube] Missing ffmpeg/ffprobe (required for audio post-processing and conversion).")
+            print("[YouTube] Download and unzip ffmpeg+ffprobe into root folder of OrpheusDL: https://ffmpeg.org/download.html")
+
     def _get_base_opts(self) -> Dict[str, Any]:
         """Get base yt-dlp options with JS runtime detection (PyInstaller safe)."""
         global _js_runtime_logged, _cookie_warning_shown, _shown_warnings
@@ -445,6 +530,13 @@ class YouTubeAPI:
                 print(f"[YouTube] WARNING: Download failed due to age restriction. Use cookies at {cookies_location}")
             elif "403" in msg or "Forbidden" in msg:
                 print(f"[YouTube] WARNING: Download failed with HTTP 403. Ensure cookies at {cookies_location}")
+            elif (
+                "requested format is not available" in msg.lower()
+                or "no supported javascript runtime" in msg.lower()
+                or "ffprobe and ffmpeg not found" in msg.lower()
+                or "postprocessing" in msg.lower()
+            ):
+                self._print_dependency_help(self._collect_runtime_status(), msg)
             print(f"[YouTube] Download error: {e}")
             return None
 
